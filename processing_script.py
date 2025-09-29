@@ -28,6 +28,10 @@ def convert_to_openai_format(row, reason_type):
                 {
                     "role" : "system",
                     "content" : SYSTEM_PROMPT_MAP[reason_type]
+                },
+                {
+                    "role" : "user",
+                    "content" : row["instruction"]
                 }
             ]
         }
