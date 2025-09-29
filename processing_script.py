@@ -36,7 +36,7 @@ def convert_to_openai_format(row, reason_type):
 
         # Only the last 3 steps get images
         prev_steps = []
-        for j in range(0, len(partial_traj) - NUM_IMAGES - 1):
+        for j in range(0, len(partial_traj) - NUM_IMAGES):
             action_step = partial_traj[j].value
             format_assistant_content = ["# Step " + str(partial_traj[j]["index"] + 1)]
             format_assistant_content.append("## Action: " + action_step.action)
@@ -46,8 +46,21 @@ def convert_to_openai_format(row, reason_type):
             "role" : "assistant",
             "content" : "\n\n".join(prev_steps)
         })
+        traj_image = partial_traj[j]["image"]
+        image_full_path = f"{IMAGE_PATH_PREFIX}/{traj_image}"
+            
+        # Verify that the image file exists
+        if not os.path.exists(image_full_path):
+            raise FileNotFoundError(f"Image file not found: {image_full_path}. "
+                                    f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
 
-        for j in range(max(0, len(partial_traj) - NUM_IMAGES - 1), len(partial_traj)):
+        if len(partial_traj) - NUM_IMAGES > 0:
+            messages["messages"].append({
+                "role" : "user",
+                "content" : "<image>"
+            })
+
+        for j in range(max(0, len(partial_traj) - NUM_IMAGES), len(partial_traj)):
             action_step = partial_traj[j].value
             format_assistant_content = ["# Step " + str(partial_traj[j]["index"] + 1)]
 
@@ -134,7 +147,7 @@ def main(args):
     processed_data = df.rdd.flatMap(lambda x: convert_to_openai_format(x, args.type))
     
     # Collect all data and write to a single JSONL file
-    all_data = processed_data.collect()
+    all_data = processed_data.collect()[:1]
     
     # Write all_data to JSON file
     with open(OUTPUT_FILE, 'w') as f:
