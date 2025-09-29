@@ -16,7 +16,7 @@ SYSTEM_PROMPT_MAP = {
     "L2": L2_SYSTEM_PROMPT,
     "L3": L3_SYSTEM_PROMPT
 }
-MIN_TRAJ_LENGTH=2
+MIN_TRAJ_LENGTH=0
 
 def convert_to_openai_format(row, reason_type):
     all_data_points = []
@@ -161,7 +161,7 @@ def main(args):
     processed_data = df.rdd.flatMap(lambda x: convert_to_openai_format(x, args.type))
     
     # Collect all data and write to a single JSONL file
-    all_data = processed_data.collect()[:5]
+    all_data = processed_data.collect()
     
     # Write all_data to JSON file
     with open(OUTPUT_FILE, 'w') as f:
