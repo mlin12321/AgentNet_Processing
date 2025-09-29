@@ -57,7 +57,7 @@ def convert_to_openai_format(row, reason_type):
         if len(partial_traj) - NUM_IMAGES > 0:
             messages["messages"].append({
                 "role" : "user",
-                "content" : "<image>"
+                "image" : image_full_path
             })
 
         for j in range(max(0, len(partial_traj) - NUM_IMAGES), len(partial_traj)):
