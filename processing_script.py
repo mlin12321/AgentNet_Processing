@@ -16,12 +16,13 @@ SYSTEM_PROMPT_MAP = {
     "L2": L2_SYSTEM_PROMPT,
     "L3": L3_SYSTEM_PROMPT
 }
+MIN_TRAJ_LENGTH=2
 
 def convert_to_openai_format(row, reason_type):
     all_data_points = []
     
     # Process nontrivial sub-trajectories, e.g. those with length > 5
-    for i in range(5, len(row["traj"])):
+    for i in range(MIN_TRAJ_LENGTH, len(row["traj"])):
         # Create a new messages list for each trajectory prefix
         messages = {
             "messages": [
@@ -47,24 +48,29 @@ def convert_to_openai_format(row, reason_type):
             format_assistant_content.append("## Action: " + action_step.action)
             prev_steps.append("\n".join(format_assistant_content))
 
-        messages["messages"].append({
-            "role" : "assistant",
-            "content" : "\n\n".join(prev_steps)
-        })
-        traj_image = partial_traj[j]["image"]
+        traj_image = partial_traj[max(len(partial_traj) - NUM_IMAGES - 1, 0)]["image"]
         image_full_path = f"{IMAGE_PATH_PREFIX}/{traj_image}"
+
+        # Interleave user and assistant messages for image after concatenation
+        if prev_steps: # I.e., len(partial_traj) > NUM_IMAGES
+            messages["messages"].append({
+                "role" : "assistant",
+                "content" : "\n\n".join(prev_steps)
+            })
+            messages["messages"].append({
+                "role" : "user",
+                "content" : "<image>"
+            })
+        else:
+            # Append an image token to the user message, if no assistant message was given
+            messages["messages"][-1]["content"] += "<image>"
+        messages["images"].append(image_full_path)
+            
             
         # Verify that the image file exists
         if not os.path.exists(image_full_path):
             raise FileNotFoundError(f"Image file not found: {image_full_path}. "
                                     f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
-
-        if len(partial_traj) - NUM_IMAGES > 0:
-            messages["messages"].append({
-                "role" : "user",
-                "content" : "<image>"
-            })
-            messages["images"].append(image_full_path)
 
         for j in range(max(0, len(partial_traj) - NUM_IMAGES), len(partial_traj)):
             action_step = partial_traj[j].value
@@ -97,16 +103,17 @@ def convert_to_openai_format(row, reason_type):
             })
     
         
-            traj_image = partial_traj[j]["image"]
-            image_full_path = f"{IMAGE_PATH_PREFIX}/{traj_image}"
-            
-            # Verify that the image file exists
-            if not os.path.exists(image_full_path):
-                raise FileNotFoundError(f"Image file not found: {image_full_path}. "
-                                      f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
-            
-            # Do not append the image for the last step
+            # Format starts with init image, then action, then images, so we retrieve image form the next timestep
             if j != len(partial_traj) - 1:
+                traj_image = partial_traj[j + 1]["image"]
+                image_full_path = f"{IMAGE_PATH_PREFIX}/{traj_image}"
+                
+                # Verify that the image file exists
+                if not os.path.exists(image_full_path):
+                    raise FileNotFoundError(f"Image file not found: {image_full_path}. "
+                                        f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
+                
+                # Do not append the image for the last step
                 messages["messages"].append({
                     "role" : "user",
                     "content" : "<image>"
@@ -154,7 +161,7 @@ def main(args):
     processed_data = df.rdd.flatMap(lambda x: convert_to_openai_format(x, args.type))
     
     # Collect all data and write to a single JSONL file
-    all_data = processed_data.collect()[:1]
+    all_data = processed_data.collect()[:5]
     
     # Write all_data to JSON file
     with open(OUTPUT_FILE, 'w') as f:
