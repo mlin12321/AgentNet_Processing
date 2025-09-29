@@ -5,8 +5,11 @@ from system_prompts import L1_SYSTEM_PROMPT, L2_SYSTEM_PROMPT, L3_SYSTEM_PROMPT
 import argparse
 import json
 
-# import os
+import os
 # os.environ['PYSPARK_PYTHON'] = '...'
+PATH_PREFIX="/local/scratch/lin.3976/AgentNet"
+IMAGE_PATH_PREFIX=f"{PATH_PREFIX}/ubuntu_images_raw"
+OUTPUT_FILE=f"{PATH_PREFIX}/agentnet_ubuntu_5k_train.json"
 
 SYSTEM_PROMPT_MAP = {
     "L1": L1_SYSTEM_PROMPT,
@@ -17,14 +20,17 @@ SYSTEM_PROMPT_MAP = {
 def convert_to_openai_format(row, reason_type):
     all_data_points = []
     
-    for i in range(1, len(row["traj"])):
+    # Process nontrivial sub-trajectories, e.g. those with length > 5
+    for i in range(5, len(row["traj"])):
         # Create a new messages list for each trajectory prefix
-        messages = [
-            {
-                "role" : "system",
-                "content" : SYSTEM_PROMPT_MAP[reason_type]
-            }
-        ]
+        messages = {
+            "messages": [
+                {
+                    "role" : "system",
+                    "content" : SYSTEM_PROMPT_MAP[reason_type]
+                }
+            ]
+        }
         
         partial_traj = row["traj"][:i + 1]
         for j in range(len(partial_traj)):
@@ -52,15 +58,23 @@ def convert_to_openai_format(row, reason_type):
             if j == len(partial_traj) - 1:
                 format_assistant_content.append("\n## Code: ```python\\n" + action_step.code + "```")
 
-            messages.append({
+            messages["messages"].append({
                 "role" : "assistant",
                 "content" : "\n".join(format_assistant_content)
             })
     
         
-            messages.append({
+            traj_image = partial_traj[j]["image"]
+            image_full_path = f"{IMAGE_PATH_PREFIX}/{traj_image}"
+            
+            # Verify that the image file exists
+            if not os.path.exists(image_full_path):
+                raise FileNotFoundError(f"Image file not found: {image_full_path}. "
+                                      f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
+            
+            messages["messages"].append({
                 "role" : "user",
-                "image" : partial_traj[j]["image"]
+                "image" : image_full_path
             })
         
         # Add this trajectory prefix as a separate data point
@@ -95,22 +109,24 @@ def main(args):
     # read a JSON file into a DataFrame
     df = spark.read.json("agentnet_ubuntu_5k.jsonl")
 
-    # # show the first 10 rows of the DataFrame
-    # df.show(10)
+    # Filter out tasks which have a low alignment score
+    df = df.filter(df.alignment_score >= 5)
 
     # Map the data to the OpenAI format
     # args.type should be the reason type, e.g. L1, L2, L3
     # Using flatMap since convert_to_openai_format now returns multiple data points per row
-    # Wrap each message list in a tuple so it can be converted to DataFrame properly
-    df = df.rdd.flatMap(lambda x: [(messages,) for messages in convert_to_openai_format(x, args.type)]).toDF(["messages"])
-    # df.show(10)
-    for row in df.head(n=5):
-        print("--" * 50)
-        print(json.dumps(row, indent=4))
-        print("--" * 50)
+    processed_data = df.rdd.flatMap(lambda x: convert_to_openai_format(x, args.type))
+    
+    # Collect all data and write to a single JSONL file
+    all_data = processed_data.collect()[:5]
+    
+    # Write all_data to JSON file
+    with open(OUTPUT_FILE, 'w') as f:
+        json.dump(all_data, f, indent=4)
+    
+    print(f"Successfully wrote {len(all_data)} data points to {OUTPUT_FILE}")
+    
     spark.stop()
-
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
