@@ -10,7 +10,7 @@ import os
 PATH_PREFIX="/local/scratch/lin.3976/AgentNet"
 IMAGE_PATH_PREFIX=f"{PATH_PREFIX}/ubuntu_images_raw"
 OUTPUT_FILE=f"{PATH_PREFIX}/agentnet_ubuntu_5k_train.json"
-
+NUM_IMAGES=3
 SYSTEM_PROMPT_MAP = {
     "L1": L1_SYSTEM_PROMPT,
     "L2": L2_SYSTEM_PROMPT,
@@ -33,7 +33,21 @@ def convert_to_openai_format(row, reason_type):
         }
         
         partial_traj = row["traj"][:i + 1]
-        for j in range(len(partial_traj)):
+
+        # Only the last 3 steps get images
+        prev_steps = []
+        for j in range(0, len(partial_traj) - NUM_IMAGES - 1):
+            action_step = partial_traj[j].value
+            format_assistant_content = ["# Step " + str(partial_traj[j]["index"] + 1)]
+            format_assistant_content.append("## Action: " + action_step.action)
+            prev_steps.append("\n".join(format_assistant_content))
+
+        messages["messages"].append({
+            "role" : "assistant",
+            "content" : "\n\n".join(prev_steps)
+        })
+
+        for j in range(max(0, len(partial_traj) - NUM_IMAGES - 1), len(partial_traj)):
             action_step = partial_traj[j].value
             format_assistant_content = ["# Step " + str(partial_traj[j]["index"] + 1)]
 
@@ -72,11 +86,13 @@ def convert_to_openai_format(row, reason_type):
                 raise FileNotFoundError(f"Image file not found: {image_full_path}. "
                                       f"Expected trajectory image '{traj_image}' does not exist in {IMAGE_PATH_PREFIX}")
             
-            messages["messages"].append({
-                "role" : "user",
-                "image" : image_full_path
-            })
-        
+            # Do not append the image for the last step
+            if j != len(partial_traj) - 1:
+                messages["messages"].append({
+                    "role" : "user",
+                    "image" : image_full_path
+                })
+            
         # Add this trajectory prefix as a separate data point
         all_data_points.append(messages)
 
@@ -118,7 +134,7 @@ def main(args):
     processed_data = df.rdd.flatMap(lambda x: convert_to_openai_format(x, args.type))
     
     # Collect all data and write to a single JSONL file
-    all_data = processed_data.collect()[:5]
+    all_data = processed_data.collect()
     
     # Write all_data to JSON file
     with open(OUTPUT_FILE, 'w') as f:
