@@ -33,7 +33,8 @@ def convert_to_openai_format(row, reason_type):
                     "role" : "user",
                     "content" : row["instruction"]
                 }
-            ]
+            ],
+            "images": []
         }
         
         partial_traj = row["traj"][:i + 1]
@@ -61,8 +62,9 @@ def convert_to_openai_format(row, reason_type):
         if len(partial_traj) - NUM_IMAGES > 0:
             messages["messages"].append({
                 "role" : "user",
-                "image" : image_full_path
+                "content" : "<image>"
             })
+            messages["images"].append(image_full_path)
 
         for j in range(max(0, len(partial_traj) - NUM_IMAGES), len(partial_traj)):
             action_step = partial_traj[j].value
@@ -107,8 +109,9 @@ def convert_to_openai_format(row, reason_type):
             if j != len(partial_traj) - 1:
                 messages["messages"].append({
                     "role" : "user",
-                    "image" : image_full_path
+                    "content" : "<image>"
                 })
+                messages["images"].append(image_full_path)
             
         # Add this trajectory prefix as a separate data point
         all_data_points.append(messages)
