@@ -16,11 +16,12 @@ SYSTEM_PROMPT_MAP = {
     "L2": L2_SYSTEM_PROMPT,
     "L3": L3_SYSTEM_PROMPT
 }
-MIN_TRAJ_LENGTH=0
 
 def convert_to_openai_format(row, reason_type):
     all_data_points = []
-    
+
+    MIN_TRAJ_LENGTH = 0 # len(row["traj"]) - 1
+
     # Process nontrivial sub-trajectories, e.g. those with length > 5
     for i in range(MIN_TRAJ_LENGTH, len(row["traj"])):
         # Create a new messages list for each trajectory prefix
